@@ -1,0 +1,102 @@
+
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="基于合成数据的 Sub2API 用量回放与模型路由实验台。">
+  <title>Sub2API Lab · 模拟用量控制台</title>
+  <link rel="stylesheet" href="./lab.css">
+  <script type="module" src="./lab.js"></script><script type="module" src="./sample.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <div class="mast-inner">
+      <a class="brand" href="#top"><span class="brand-icon" aria-hidden="true">◇</span><span class="brand-copy"><strong>Sub2API Lab</strong><small>Gateway Simulator</small></span></a>
+      <nav class="topnav" aria-label="页面导航"><a href="#overview">用量总览</a><a href="#routing">路由实验</a><a href="#ledger">用量明细</a><a href="#monthly-prices">月度费率</a><a href="#request-samples">请求级样例</a></nav>
+      <span class="sim-badge"><span aria-hidden="true">●</span> SIMULATION · 合成数据</span>
+    </div>
+  </header>
+  <main class="shell" id="top">
+    <section class="hero" id="overview">
+      <div><p class="eyebrow">USAGE EXPLORER</p><h1>用量回放与模型路由</h1><p>查看历史模拟流量，比较不同模型组合对成本、缓存和输出的影响。</p></div>
+      <div class="hero-actions"><button id="export" class="secondary" disabled>↓ 导出当前视图 CSV</button></div>
+    </section>
+    <div class="data-note"><span id="dataset-status" role="status">正在读取模拟数据…</span><span>USD · Europe/Berlin · 团队模拟范围</span></div>
+    <form id="filters" class="panel filters">
+      <div class="section-head"><div><h2>查询范围</h2><p>日期含首尾两天。点击月、周柱可下钻到日。</p></div>
+        <div class="presets" aria-label="日期预设"><button type="button" data-days="all" aria-pressed="true">全区间</button><button type="button" data-days="90">近 90 天</button><button type="button" data-days="30">近 30 天</button><button type="button" data-days="7">近 7 天</button></div>
+      </div>
+      <div class="filter-grid">
+        <label>开始日期<input id="from" type="date" required></label>
+        <label>结束日期<input id="to" type="date" required></label>
+        <label>模型<select id="model"><option value="">全部模型</option></select></label>
+        <label>用途<select id="role"><option value="">全部用途</option><option value="high">高性能 / 思考</option><option value="other">经济档 / 非思考</option></select></label>
+        <button class="primary" id="apply" disabled>应用筛选</button>
+      </div>
+      <div class="provider-group" id="providers" aria-label="供应商"></div>
+      <p class="help" id="filter-message" role="status" hidden></p>
+    </form>
+    <section class="kpis" id="kpis" aria-label="核心指标"></section>
+    <div class="dashboard-grid">
+      <section class="panel trend-panel" aria-labelledby="trend-title">
+        <div class="section-head"><div><p class="eyebrow">THROUGHPUT</p><h2 id="trend-title">用量趋势</h2></div><div class="segmented" aria-label="时间粒度"><button data-grain="month">月</button><button data-grain="week" aria-pressed="true">周</button><button data-grain="day">日</button></div></div>
+        <div class="chart-inspect"><div class="legend" id="legend"></div><label>指标 <select id="metric"><option value="tokens">Token</option><option value="requests">请求数</option><option value="cost">上游成本</option></select></label></div>
+        <div id="chart" class="chart-frame" aria-label="用量趋势图"></div>
+        <div class="chart-inspect" id="chart-detail" aria-live="polite"></div>
+        <div class="replay-bar"><button id="play" class="secondary">▶ 历史回放</button><label>回放进度 <input id="replay" type="range" min="0" max="1" value="1" aria-label="回放截止日期"></label><output id="replay-label">—</output></div>
+      </section>
+      <section class="panel routing-panel" id="routing" aria-labelledby="routing-title">
+        <div class="section-head"><div><p class="eyebrow">ROUTING EXPERIMENT</p><h2 id="routing-title">模型混用实验</h2></div></div>
+        <div class="segmented mode-tabs" aria-label="路由模式"><button data-mode="baseline" aria-pressed="true">原始模拟</button><button data-mode="scenario" aria-pressed="false">调整配比</button></div>
+        <p class="help">按各供应商设定高性能档的 token 目标占比。DeepSeek 旧版对应思考模式，V4 对应 Pro。</p>
+        <div class="routing-controls" id="routing-controls"></div>
+        <div class="routing-delta" id="routing-delta" aria-live="polite"></div>
+        <p class="help" id="routing-note">按每个时间桶当时可用的模型分流。成本和缓存按原模型的单位用量估算。</p>
+      </section>
+    </div>
+    <div class="lower-grid">
+      <section class="panel models-panel" aria-labelledby="models-title">
+        <div class="section-head"><div><p class="eyebrow">MODEL MIX</p><h2 id="models-title">模型用量分布</h2><p>点模型查看对应的趋势与明细。</p></div><button class="quiet" id="reset-model" hidden>清除模型筛选</button></div>
+        <div id="models" class="model-list"></div>
+      </section>
+      <section class="panel ledger-panel" id="ledger">
+        <div class="section-head"><div><p class="eyebrow">USAGE RECORDS</p><h2>用量明细</h2><p id="ledger-info"></p></div><span class="sim-badge">模拟用量</span></div>
+        <div class="table-wrap"><table><thead><tr><th>时间</th><th>供应商 / 模型</th><th>Token</th><th>缓存命中</th><th>上游成本</th><th><span class="sr-only">详情</span></th></tr></thead><tbody id="rows"></tbody></table></div>
+        <div class="table-tools"><span id="page-info"></span><div class="pager"><button id="prev" class="secondary">上一页</button><button id="next" class="secondary">下一页</button></div></div>
+      </section>
+    </div>
+    <section class="panel monthly-panel" id="monthly-prices" aria-labelledby="monthly-title">
+      <div class="section-head"><div><p class="eyebrow">MONTHLY MODEL AND RATE AUDIT</p><h2 id="monthly-title">月度模型、费率与成本</h2><p id="cohort-budget"></p></div><label>查看月份 <select id="audit-month"></select></label></div>
+      <div class="table-wrap audit-summary-wrap"><table><thead><tr><th>月份</th><th>团队 Tokens</th><th>上游成本 USD</th><th>采用模型 / 模式</th><th>发布与变价事件</th></tr></thead><tbody id="month-summary"></tbody></table></div>
+      <div class="monthly-audit">
+        <div class="section-head"><div><h3 id="audit-title"></h3><p>费率单位为 USD / 百万 token。展开模型可见采用期间、缓存写入和来源。</p></div></div>
+        <div class="audit-split">
+          <div><h4>本月发布与变价</h4><ul id="audit-events" class="audit-events"></ul></div>
+          <div><h4>本月团队混用与计费</h4><div id="audit-mix" class="audit-mix"></div></div>
+        </div>
+      </div>
+    </section>
+    
+    <section class="panel" id="request-samples" aria-labelledby="request-title">
+      <div class="section-head"><div><p class="eyebrow">SYNTHETIC REQUEST EXPLORER</p><h2 id="request-title">请求级样例</h2><p>抽自 2026-10-31 的模拟用量。金额为单请求 USD，样例已包含在模拟范围内。</p></div><span class="sim-badge">模拟请求</span></div>
+      <div class="filter-grid" id="request-filters">
+        <label>供应商<select id="sample-provider"><option value="">全部供应商</option></select></label>
+        <label>模型<select id="sample-model"><option value="">全部模型</option></select></label>
+        <label>响应方式<select id="sample-stream"><option value="">全部</option><option value="stream">流式</option><option value="sync">非流式</option></select></label>
+      </div>
+      <div class="table-wrap"><table><thead><tr><th>供应商 / 模型</th><th>普通输入</th><th>缓存读</th><th>缓存写</th><th>输出</th><th>响应方式</th><th>首 token (ms)</th><th>总耗时 (ms)</th><th>单请求 USD</th></tr></thead><tbody id="sample-rows"></tbody></table></div>
+      <div class="table-tools"><span id="sample-page" role="status">正在读取模拟样例…</span><div class="pager"><button id="sample-prev" class="secondary" disabled>上一页</button><button id="sample-next" class="secondary" disabled>下一页</button></div></div>
+    </section>
+    <section class="panel source-notes"><h2>数据与计算口径</h2><p>本页为 Sub2API 风格的演练环境。用量、请求及缓存为合成数据。请求样例来自合成请求级成本重估。Anthropic 使用样本统计或家族代理，OpenAI、DeepSeek 和 Google 使用独立的情景假设。费率来源及代理价标记在明细详情中。</p><p>历史回放按柏林日历组织。混用实验固定每家供应商在各时间桶的 token 总量，用原有记录的单位用量估算重分配后的成本。固定技术服务费不计入模型用量成本。</p><p id="source-correction"></p><p>界面参考 <a href="https://github.com/Wei-Shaw/sub2api" target="_blank" rel="noopener noreferrer">Sub2API</a> 的用量与模型统计，以及 <a href="https://github.com/QuantumNous/new-api#screenshots" target="_blank" rel="noopener noreferrer">New API</a> 的演示面板。</p></section>
+    <footer>Sub2API Lab · SIMULATION ONLY · 2025-10-01 至 2026-10-31</footer>
+  </main>
+  <dialog id="detail-dialog" aria-labelledby="detail-title"><div class="dialog-head"><div><p class="eyebrow">SIMULATED USAGE RECORD</p><h2 id="detail-title">模拟记录详情</h2></div><form method="dialog"><button class="secondary">关闭</button></form></div><div class="dialog-grid" id="detail-content"></div></dialog>
+</body>
+</html>
+
+
+
+
+
+
